@@ -1,5 +1,5 @@
 # Makefile for compiling bare-metal ARM Cortex-M3 C/assembly
-# Target: STM32F103C8T6 (Blue Pill)
+# Target: STM32F103C8T6 (Blue Pill) with TinyRTOS
 TARGET = main
 
 # Define the linker script location and chip architecture.
@@ -16,13 +16,11 @@ OD = $(TOOLCHAIN)/bin/arm-none-eabi-objdump
 OS = $(TOOLCHAIN)/bin/arm-none-eabi-size
 
 # Assembly directives.
-# += appends to the variable (e.g. ASFLAGS grows with each line).
 ASFLAGS += -c
 ASFLAGS += -O0
 ASFLAGS += -mcpu=$(MCU_SPEC)
 ASFLAGS += -mthumb
 ASFLAGS += -Wall
-# (Set error messages to appear on a single line.)
 ASFLAGS += -fmessage-length=0
 
 # C compilation directives.
@@ -30,10 +28,11 @@ CFLAGS += -mcpu=$(MCU_SPEC)
 CFLAGS += -mthumb
 CFLAGS += -Wall
 CFLAGS += -g
-# (Set error messages to appear on a single line.)
+CFLAGS += -O1
 CFLAGS += -fmessage-length=0
-# (Set system to ignore semihosted junk)
 CFLAGS += --specs=nosys.specs
+CFLAGS += -ffunction-sections
+CFLAGS += -fdata-sections
 
 # Linker directives.
 LSCRIPT = ./$(LD_SCRIPT)
@@ -44,43 +43,47 @@ LFLAGS += --specs=nosys.specs
 LFLAGS += -nostdlib
 LFLAGS += -lgcc
 LFLAGS += -T$(LSCRIPT)
+LFLAGS += -Wl,--gc-sections
 
 # Include paths.
 INCLUDE  = -I./device_headers
+INCLUDE += -I./include
+INCLUDE += -I./src/bsp/blue_pill
 
-# Source files.
+# Assembly source files.
 AS_SRC  = ./core.S
 AS_SRC += ./vector_table.S
-C_SRC   = ./main.c
 
-# Substitution reference: replaces .S with .o in AS_SRC.
-#   $(AS_SRC:.S=.o)  =>  ./core.o ./vector_table.o
+# C source files — kernel
+C_SRC   = ./main.c
+C_SRC  += ./src/kernel/kernel.c
+C_SRC  += ./src/kernel/task.c
+C_SRC  += ./src/kernel/scheduler.c
+C_SRC  += ./src/kernel/port.c
+C_SRC  += ./src/kernel/fault.c
+C_SRC  += ./src/kernel/semaphore.c
+C_SRC  += ./src/kernel/mutex.c
+C_SRC  += ./src/kernel/queue.c
+# C source files — BSP
+C_SRC  += ./src/bsp/blue_pill/clock.c
+C_SRC  += ./src/bsp/blue_pill/led.c
+
+# Object files
 OBJS  = $(AS_SRC:.S=.o)
 OBJS += $(C_SRC:.c=.o)
 
-# .PHONY tells make that "all" and "clean" are not real files.
-# Without this, if a file named "all" or "clean" existed in the
-# directory, make would think the target is already up to date.
 .PHONY: all
 all: $(TARGET).bin
 
-# Pattern rule: builds any .o from its matching .S file.
-#   %.o  matches any target ending in .o  (e.g. core.o)
-#   %.S  matches the prerequisite ending in .S (e.g. core.S)
-#
-# Automatic variables used in the recipe:
-#   $<  = first prerequisite       => core.S
-#   $@  = target name              => core.o
+# Pattern rule: .S -> .o
 %.o: %.S
 	$(CC) -x assembler-with-cpp $(ASFLAGS) $< -o $@
 
-# Pattern rule: builds any .o from its matching .c file.
+# Pattern rule: .c -> .o
 %.o: %.c
 	$(CC) -c $(CFLAGS) $(INCLUDE) $< -o $@
 
 # Link all object files into the final ELF.
-#   $^  = all prerequisites        => core.o vector_table.o main.o
-#   $@  = target name              => main.elf
 $(TARGET).elf: $(OBJS)
 	$(CC) $^ $(LFLAGS) -o $@
 

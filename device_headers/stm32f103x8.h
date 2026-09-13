@@ -272,15 +272,94 @@ typedef struct {
 #define SCB                   ((SCB_Type *) SCB_BASE)
 
 typedef struct {
-    __I  uint32_t CPUID;
-    __IO uint32_t ICSR;
-    __IO uint32_t VTOR;
-    __IO uint32_t AIRCR;
-    __IO uint32_t SCR;
-    __IO uint32_t CCR;
-    __IO uint8_t  SHP[12];
-    __IO uint32_t SHCSR;
+    __I  uint32_t CPUID;        /* 0x00: CPUID base register */
+    __IO uint32_t ICSR;         /* 0x04: Interrupt control and state register */
+    __IO uint32_t VTOR;         /* 0x08: Vector table offset register */
+    __IO uint32_t AIRCR;        /* 0x0C: Application interrupt and reset control register */
+    __IO uint32_t SCR;          /* 0x10: System control register */
+    __IO uint32_t CCR;          /* 0x14: Configuration and control register */
+    __IO uint8_t  SHP[12];      /* 0x18: System handler priority registers */
+    __IO uint32_t SHCSR;        /* 0x24: System handler control and state register */
+    __IO uint32_t CFSR;         /* 0x28: Configurable fault status register */
+    __IO uint32_t HFSR;         /* 0x2C: Hard fault status register */
+    __IO uint32_t DFSR;         /* 0x30: Debug fault status register */
+    __IO uint32_t MMFAR;        /* 0x34: MemManage fault address register */
+    __IO uint32_t BFAR;         /* 0x38: Bus fault address register */
+    __IO uint32_t AFSR;         /* 0x3C: Auxiliary fault status register */
 } SCB_Type;
+
+/* --- SCB bit definitions --- */
+#define SCB_ICSR_PENDSVSET_Msk      (1UL << 28)
+#define SCB_CCR_DIV_0_TRP_Msk       (1UL << 4)
+#define SCB_CCR_UNALIGN_TRP_Msk     (1UL << 3)
+
+/* ================================================================== */
+/*  SysTick (System Timer)                                             */
+/*  Cortex-M3 core peripheral at 0xE000E010                            */
+/*  Reference: ARM Cortex-M3 Technical Reference Manual                */
+/* ================================================================== */
+
+typedef struct {
+    __IO uint32_t CTRL;     /* 0x00: SysTick control and status register */
+    __IO uint32_t LOAD;     /* 0x04: SysTick reload value register */
+    __IO uint32_t VAL;      /* 0x08: SysTick current value register */
+    __I  uint32_t CALIB;    /* 0x0C: SysTick calibration register */
+} SysTick_Type;
+
+#define SysTick             ((SysTick_Type *) 0xE000E010UL)
+
+#define SysTick_CTRL_ENABLE_Msk     (1UL << 0)
+#define SysTick_CTRL_TICKINT_Msk    (1UL << 1)
+#define SysTick_CTRL_CLKSOURCE_Msk  (1UL << 2)
+#define SysTick_CTRL_COUNTFLAG_Msk  (1UL << 16)
+
+/* ================================================================== */
+/*  FLASH (embedded flash memory controller)                           */
+/*  Base: 0x40022000                                                   */
+/*  Reference: RM0008 Section 3.3                                      */
+/* ================================================================== */
+
+#define FLASH_ACR_REG       (*((volatile uint32_t *) 0x40022000UL))
+#define FLASH_ACR_LATENCY_0  0x00UL   /* 0 wait states (0 < SYSCLK <= 24 MHz) */
+#define FLASH_ACR_LATENCY_1  0x01UL   /* 1 wait state  (24 < SYSCLK <= 48 MHz) */
+#define FLASH_ACR_LATENCY_2  0x02UL   /* 2 wait states (48 < SYSCLK <= 72 MHz) */
+
+/* ================================================================== */
+/*  CMSIS-style compiler intrinsics for bare-metal                     */
+/* ================================================================== */
+
+static inline void __disable_irq(void) {
+    __asm volatile ("cpsid i" ::: "memory");
+}
+
+static inline void __enable_irq(void) {
+    __asm volatile ("cpsie i" ::: "memory");
+}
+
+static inline void __DSB(void) {
+    __asm volatile ("dsb 0xF" ::: "memory");
+}
+
+static inline void __ISB(void) {
+    __asm volatile ("isb 0xF" ::: "memory");
+}
+
+static inline uint32_t __get_PRIMASK(void) {
+    uint32_t result;
+    __asm volatile ("MRS %0, primask" : "=r"(result));
+    return result;
+}
+
+static inline void __set_PRIMASK(uint32_t primask) {
+    __asm volatile ("MSR primask, %0" :: "r"(primask) : "memory");
+}
+
+/* ================================================================== */
+/*  SystemCoreClock — global variable for system clock frequency       */
+/*  Set by clock_init() to actual frequency in Hz.                     */
+/* ================================================================== */
+
+extern uint32_t SystemCoreClock;
 
 /* --- NVIC helper functions (inline, CMSIS-compatible) --- */
 
