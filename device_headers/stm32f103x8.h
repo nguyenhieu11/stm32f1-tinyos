@@ -267,20 +267,146 @@ typedef struct {
 #define NVIC_BASE             (0xE000E100UL)
 #define NVIC                  ((NVIC_TypeDef *) NVIC_BASE)
 
-/* System Control Block (for priority configuration) */
+/* System Control Block (for priority configuration, PendSV, fault handling) */
 #define SCB_BASE              (0xE000ED00UL)
 #define SCB                   ((SCB_Type *) SCB_BASE)
 
 typedef struct {
-    __I  uint32_t CPUID;
-    __IO uint32_t ICSR;
-    __IO uint32_t VTOR;
-    __IO uint32_t AIRCR;
-    __IO uint32_t SCR;
-    __IO uint32_t CCR;
-    __IO uint8_t  SHP[12];
-    __IO uint32_t SHCSR;
+    __I  uint32_t CPUID;        /* 0x00: CPUID base register */
+    __IO uint32_t ICSR;         /* 0x04: Interrupt control and state register */
+    __IO uint32_t VTOR;         /* 0x08: Vector table offset register */
+    __IO uint32_t AIRCR;        /* 0x0C: Application interrupt and reset control register */
+    __IO uint32_t SCR;          /* 0x10: System control register */
+    __IO uint32_t CCR;          /* 0x14: Configuration and control register */
+    __IO uint8_t  SHP[12];      /* 0x18: System handler priority registers */
+    __IO uint32_t SHCSR;        /* 0x24: System handler control and state register */
+    __IO uint32_t CFSR;         /* 0x28: Configurable fault status register */
+    __IO uint32_t HFSR;         /* 0x2C: Hard fault status register */
+    __IO uint32_t DFSR;         /* 0x30: Debug fault status register */
+    __IO uint32_t MMFAR;        /* 0x34: MemManage fault address register */
+    __IO uint32_t BFAR;         /* 0x38: Bus fault address register */
+    __IO uint32_t AFSR;         /* 0x3C: Auxiliary fault status register */
 } SCB_Type;
+
+/* --- SCB bit definitions (used by port layer for PendSV and fault config) --- */
+#define SCB_ICSR_PENDSVSET_Msk      (1UL << 28)  /* Write 1 to set PendSV pending */
+#define SCB_CCR_DIV_0_TRP_Msk       (1UL << 4)   /* Trap on divide by zero */
+#define SCB_CCR_UNALIGN_TRP_Msk     (1UL << 3)   /* Trap on unaligned access */
+
+/* ================================================================== */
+/*  SysTick (System Timer)                                             */
+/*  Cortex-M3 core peripheral at 0xE000E010                            */
+/*  Reference: ARM Cortex-M3 Technical Reference Manual, Section 4.4   */
+/*                                                                     */
+/*  The SysTick timer is a 24-bit down-counter built into every        */
+/*  Cortex-M3. It provides a simple, portable way to generate a        */
+/*  periodic interrupt for an RTOS tick.                                */
+/*                                                                     */
+/*  Registers:                                                          */
+/*    CTRL: Control and status                                         */
+/*           bit 0: ENABLE  — counter active                           */
+/*           bit 1: TICKINT — generate interrupt on underflow          */
+/*           bit 2: CLKSOURCE — 0=external, 1=processor clock          */
+/*           bit 16: COUNTFLAG — set when counter reaches 0            */
+/*    LOAD: Value loaded into counter on underflow (24-bit)            */
+/*    VAL:  Current counter value (write to reset)                     */
+/*    CALIB: Calibration value (read-only, not always populated)       */
+/* ================================================================== */
+
+typedef struct {
+    __IO uint32_t CTRL;     /* 0x00: SysTick control and status register */
+    __IO uint32_t LOAD;     /* 0x04: SysTick reload value register */
+    __IO uint32_t VAL;      /* 0x08: SysTick current value register */
+    __I  uint32_t CALIB;    /* 0x0C: SysTick calibration register */
+} SysTick_Type;
+
+#define SysTick             ((SysTick_Type *) 0xE000E010UL)
+
+#define SysTick_CTRL_ENABLE_Msk     (1UL << 0)
+#define SysTick_CTRL_TICKINT_Msk    (1UL << 1)
+#define SysTick_CTRL_CLKSOURCE_Msk  (1UL << 2)
+#define SysTick_CTRL_COUNTFLAG_Msk  (1UL << 16)
+
+/* ================================================================== */
+/*  FLASH (embedded flash memory controller)                           */
+/*  Base: 0x40022000                                                   */
+/*  Reference: RM0008 Section 3.3                                      */
+/*  Needed for clock configuration (flash wait states)                 */
+/* ================================================================== */
+
+#define FLASH_ACR_REG       (*((volatile uint32_t *) 0x40022000UL))
+#define FLASH_ACR_LATENCY_0  0x00UL   /* 0 wait states (0 < SYSCLK <= 24 MHz) */
+#define FLASH_ACR_LATENCY_1  0x01UL   /* 1 wait state  (24 < SYSCLK <= 48 MHz) */
+#define FLASH_ACR_LATENCY_2  0x02UL   /* 2 wait states (48 < SYSCLK <= 72 MHz) */
+
+/* ================================================================== */
+/*  CMSIS-style compiler intrinsics for bare-metal                     */
+/*  These provide portable access to Cortex-M3 special registers       */
+/*  and instructions without writing raw assembly each time.           */
+/* ================================================================== */
+
+/**
+ * __disable_irq() — Disable all interrupts (sets PRIMASK bit 0).
+ * After this, only NMI and HardFault can preempt.
+ * Use for short critical sections; re-enable ASAP.
+ */
+static inline void __disable_irq(void) {
+    __asm volatile ("cpsid i" ::: "memory");
+}
+
+/**
+ * __enable_irq() — Re-enable interrupts (clears PRIMASK bit 0).
+ */
+static inline void __enable_irq(void) {
+    __asm volatile ("cpsie i" ::: "memory");
+}
+
+/**
+ * __DSB() — Data Synchronization Barrier.
+ * Ensures all memory accesses before this instruction complete
+ * before any memory accesses after it begin. Required after
+ * writing to SCB registers (e.g., setting PendSV pending).
+ */
+static inline void __DSB(void) {
+    __asm volatile ("dsb 0xF" ::: "memory");
+}
+
+/**
+ * __ISB() — Instruction Synchronization Barrier.
+ * Flushes the pipeline so that all instructions after ISB
+ * are re-fetched from cache or memory. Required after
+ * changing priority or control registers.
+ */
+static inline void __ISB(void) {
+    __asm volatile ("isb 0xF" ::: "memory");
+}
+
+/**
+ * __get_PRIMASK() — Read the PRIMASK register.
+ * PRIMASK bit 0 = 1 means interrupts are disabled.
+ * Used by the kernel's critical section to save/restore interrupt state.
+ */
+static inline uint32_t __get_PRIMASK(void) {
+    uint32_t result;
+    __asm volatile ("MRS %0, primask" : "=r"(result));
+    return result;
+}
+
+/**
+ * __set_PRIMASK() — Write the PRIMASK register.
+ */
+static inline void __set_PRIMASK(uint32_t primask) {
+    __asm volatile ("MSR primask, %0" :: "r"(primask) : "memory");
+}
+
+/* ================================================================== */
+/*  SystemCoreClock — global variable for system clock frequency       */
+/*  Declared here, defined in clock.c (or main.c).                     */
+/*  The SysTick timer uses this to compute the reload value for        */
+/*  a 1ms tick: LOAD = SystemCoreClock / 1000 - 1.                    */
+/* ================================================================== */
+
+extern uint32_t SystemCoreClock;
 
 /* --- NVIC helper functions (inline, CMSIS-compatible) --- */
 

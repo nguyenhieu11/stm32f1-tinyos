@@ -47,11 +47,17 @@ LFLAGS += -T$(LSCRIPT)
 
 # Include paths.
 INCLUDE  = -I./device_headers
+INCLUDE += -I./include
 
 # Source files.
 AS_SRC  = ./core.S
 AS_SRC += ./vector_table.S
 C_SRC   = ./main.c
+C_SRC  += ./src/kernel/kernel.c
+C_SRC  += ./src/kernel/task.c
+C_SRC  += ./src/kernel/port.c
+C_SRC  += ./src/kernel/scheduler.c
+C_SRC  += ./src/kernel/fault.c
 
 # Substitution reference: replaces .S with .o in AS_SRC.
 #   $(AS_SRC:.S=.o)  =>  ./core.o ./vector_table.o
